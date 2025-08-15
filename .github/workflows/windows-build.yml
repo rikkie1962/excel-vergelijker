@@ -1,0 +1,37 @@
+name: Build Windows Portable EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - compare_excel_gui.py
+      - requirements.txt
+      - .github/workflows/windows-build.yml
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      - name: Build one-file EXE (windowed)
+        run: |
+          pyinstaller --onefile --windowed --name ExcelCSV_Vergelijker compare_excel_gui.py
+      - name: Create portable ZIP
+        run: |
+          powershell Compress-Archive -Path dist\ExcelCSV_Vergelijker.exe -DestinationPath dist\ExcelCSV_Vergelijker.zip -Force
+      - name: Upload artifact (ZIP)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExcelCSV_Vergelijker
+          path: dist/ExcelCSV_Vergelijker.zip

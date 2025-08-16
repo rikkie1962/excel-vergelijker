@@ -40,10 +40,9 @@ def normalize_series(ser: pd.Series) -> pd.Series:
     ser = ser.astype(str).fillna("")
     ser = ser.str.strip()
     return ser
-
 def compute_stands_without_orders(col_orders: pd.Series, col_all: pd.Series):
     """
-    Geeft alle standnummers terug die wel in 'alle_standen' (CAD) staan,
+    Geeft alle standnummers terug die wél in 'alle_standen' (CAD) staan,
     maar niet in 'bestellingen'.
 
     - col_orders: kolom uit het bestellingenbestand (kan dubbelen bevatten)
@@ -61,6 +60,7 @@ def compute_stands_without_orders(col_orders: pd.Series, col_all: pd.Series):
 
     missing = list(set_all - set_orders)  # CAD \ Bestellingen
     return sorted(missing, key=natural_key)
+
 
 
 def ask_for_file(title: str):
@@ -92,28 +92,66 @@ def ask_for_column(root: tk.Tk, df: pd.DataFrame, title: str):
     dialog.wait_window(); return sel["v"]
 
 def main():
-    # Intro
-messagebox.showinfo(
-    "Excel/CSV Vergelijker",
-    "Kies eerst het BESTELLINGEN-bestand (kan dubbelen bevatten) en de kolom met standnummers.\n"
-    "Kies daarna het CAD-bestand met ALLE STANDNUMMERS (uniek) en de kolom.\n"
-    "Output: standen die nog GEEN bestelling hebben."
-)
+       messagebox.showinfo(
+        "Excel/CSV Vergelijker",
+        "Kies eerst het BESTELLINGEN-bestand (kan dubbelen bevatten) en de kolom met standnummers.\n"
+        "Kies daarna het CAD-bestand met ALLE STANDNUMMERS (uniek) en de kolom.\n"
+        "Output: standen die nog GEEN bestelling hebben."
+    )
 
-# 1e bestand = Bestellingen (kan dubbelen bevatten)
-f1 = ask_for_file("Kies het BESTELLINGEN-bestand (CSV of Excel)")
-...
-col1 = ask_for_column(root, df1, f"Kolom met standnummers (BESTELLINGEN) uit: {f1.name}")
+    # 1e bestand = Bestellingen (kan dubbelen bevatten)
+    f1 = ask_for_file("Kies het BESTELLINGEN-bestand (CSV of Excel)")
+    if f1 is None:
+        return
+    try:
+        df1 = read_table(f1)
+    except Exception as e:
+        messagebox.showerror("Fout bij lezen BESTELLINGEN", f"{e}")
+        return
 
-# 2e bestand = CAD (alle standen, uniek)
-f2 = ask_for_file("Kies het CAD-bestand met ALLE STANDNUMMERS (CSV of Excel)")
-...
-col2 = ask_for_column(root, df2, f"Kolom met standnummers (CAD/ALLE) uit: {f2.name}")
+    col1 = ask_for_column(root, df1, f"Kolom met standnummers (BESTELLINGEN) uit: {f1.name}")
+    if col1 is None:
+        return
 
-# Vergelijken
-try:
-    # let op: eerst bestellingen, dan alle_standen
-    result = compute_stands_without_orders(df1[col1], df2[col2])
-except Exception as e:
-    ...
+    # 2e bestand = CAD (alle standen, uniek)
+    f2 = ask_for_file("Kies het CAD-bestand met ALLE STANDNUMMERS (CSV of Excel)")
+    if f2 is None:
+        return
+    try:
+        df2 = read_table(f2)
+    except Exception as e:
+        messagebox.showerror("Fout bij lezen CAD/ALLE", f"{e}")
+        return
+
+    col2 = ask_for_column(root, df2, f"Kolom met standnummers (CAD/ALLE) uit: {f2.name}")
+    if col2 is None:
+        return
+
+    # Vergelijken
+    try:
+        # let op: eerst bestellingen, dan alle_standen
+        result = compute_stands_without_orders(df1[col1], df2[col2])
+    except Exception as e:
+        messagebox.showerror("Fout bij vergelijken", f"{e}")
+        return
+
+    # Output pad
+    out_path = filedialog.asksaveasfilename(
+        title="Kies naam en map voor het output bestand",
+        defaultextension=".xlsx",
+        filetypes=[("Excel bestand", "*.xlsx")]
+    )
+    if not out_path:
+        return
+
+    # Schrijf naar Excel
+    try:
+        out_df = pd.DataFrame({"Standnummers_zonder_bestelling": result})
+        with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+            out_df.to_excel(writer, index=False, sheet_name="Resultaat")
+        messagebox.showinfo("Klaar", f"Output weggeschreven naar:\n{out_path}\n\nAantal rijen: {len(out_df)}")
+    except Exception as e:
+        messagebox.showerror("Fout bij wegschrijven", f"{e}")
+        return
+
 

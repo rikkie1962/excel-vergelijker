@@ -41,15 +41,27 @@ def normalize_series(ser: pd.Series) -> pd.Series:
     ser = ser.str.strip()
     return ser
 
-def compute_unique_values(col1: pd.Series, col2: pd.Series):
-    s1 = normalize_series(col1)
-    s2 = normalize_series(col2)
-    combined = pd.concat([s1, s2], ignore_index=True)
-    combined = combined[combined.astype(str).str.len() > 0]
-    counts = combined.value_counts(dropna=False)
-    uniques = counts[counts == 1].index.tolist()
-    uniques_sorted = sorted(uniques, key=natural_key)
-    return uniques_sorted
+def compute_stands_without_orders(col_orders: pd.Series, col_all: pd.Series):
+    """
+    Geeft alle standnummers terug die wel in 'alle_standen' (CAD) staan,
+    maar niet in 'bestellingen'.
+
+    - col_orders: kolom uit het bestellingenbestand (kan dubbelen bevatten)
+    - col_all:    kolom uit het CAD-bestand (unieke nummers)
+    """
+    s_orders = normalize_series(col_orders)
+    s_all = normalize_series(col_all)
+
+    # lege waarden negeren
+    s_orders = s_orders[s_orders.str.len() > 0]
+    s_all = s_all[s_all.str.len() > 0]
+
+    set_orders = set(s_orders.tolist())
+    set_all = set(s_all.tolist())
+
+    missing = list(set_all - set_orders)  # CAD \ Bestellingen
+    return sorted(missing, key=natural_key)
+
 
 def ask_for_file(title: str):
     from tkinter import filedialog
@@ -80,43 +92,28 @@ def ask_for_column(root: tk.Tk, df: pd.DataFrame, title: str):
     dialog.wait_window(); return sel["v"]
 
 def main():
-    root = tk.Tk(); root.withdraw()
-    messagebox.showinfo("Excel/CSV Vergelijker",
-        "Deze tool vergelijkt twee bestanden op basis van een gekozen kolom.\n"
-        "- Dubbelen (ook meerdere keren in één bestand) worden verwijderd.\n"
-        "- Alleen unieke waarden over beide bestanden blijven over.\n"
-        "- Resultaat wordt gesorteerd en als .xlsx opgeslagen.")
-    f1 = ask_for_file("Kies het 1e doelbestand (CSV of Excel)")
-    if not f1: return
-    try: df1 = read_table(f1)
-    except Exception as e: messagebox.showerror("Fout bij lezen bestand 1", f"{e}"); return
-    col1 = ask_for_column(root, df1, f"Kolom kiezen uit: {f1.name}")
-    if not col1: return
-    f2 = ask_for_file("Kies het 2e doelbestand (CSV of Excel)")
-    if not f2: return
-    try: df2 = read_table(f2)
-    except Exception as e: messagebox.showerror("Fout bij lezen bestand 2", f"{e}"); return
-    col2 = ask_for_column(root, df2, f"Kolom kiezen uit: {f2.name}")
-    if not col2: return
-    try: uniques = compute_unique_values(df1[col1], df2[col2])
-    except Exception as e: messagebox.showerror("Fout bij vergelijken", f"{e}"); return
-    out_path = filedialog.asksaveasfilename(
-        title="Kies naam en map voor het output bestand",
-        defaultextension=".xlsx",
-        filetypes=[("Excel bestand", "*.xlsx")]
-    )
-    if not out_path: return
-    try:
-        out_df = pd.DataFrame({"Unieke_waarden": uniques})
-        with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-            out_df.to_excel(writer, index=False, sheet_name="Resultaat")
-        messagebox.showinfo("Klaar", f"Output weggeschreven naar:\n{out_path}\n\nAantal rijen: {len(out_df)}")
-    except Exception as e:
-        messagebox.showerror("Fout bij wegschrijven", f"{e}")
+    # Intro
+messagebox.showinfo(
+    "Excel/CSV Vergelijker",
+    "Kies eerst het BESTELLINGEN-bestand (kan dubbelen bevatten) en de kolom met standnummers.\n"
+    "Kies daarna het CAD-bestand met ALLE STANDNUMMERS (uniek) en de kolom.\n"
+    "Output: standen die nog GEEN bestelling hebben."
+)
 
-if __name__ == "__main__":
-    try: main()
-    except Exception as e:
-        try: messagebox.showerror("Onverwachte fout", f"{e}")
-        except: pass
-        raise
+# 1e bestand = Bestellingen (kan dubbelen bevatten)
+f1 = ask_for_file("Kies het BESTELLINGEN-bestand (CSV of Excel)")
+...
+col1 = ask_for_column(root, df1, f"Kolom met standnummers (BESTELLINGEN) uit: {f1.name}")
+
+# 2e bestand = CAD (alle standen, uniek)
+f2 = ask_for_file("Kies het CAD-bestand met ALLE STANDNUMMERS (CSV of Excel)")
+...
+col2 = ask_for_column(root, df2, f"Kolom met standnummers (CAD/ALLE) uit: {f2.name}")
+
+# Vergelijken
+try:
+    # let op: eerst bestellingen, dan alle_standen
+    result = compute_stands_without_orders(df1[col1], df2[col2])
+except Exception as e:
+    ...
+

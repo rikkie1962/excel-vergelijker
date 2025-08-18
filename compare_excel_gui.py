@@ -3,7 +3,7 @@ r"""
 Excel/CSV Vergelijker – CAD (alle stands) MIN Bestellingen
 
 Workflow:
-1) Kies het BESTELLINGEN-bestand (kan dubbelen bevatten) en de kolom met standnummers.
+1) Kies het BESTELLINGEN-bestand (mag dubbelen hebben) en de kolom met standnummers.
 2) Kies het CAD-bestand met ALLE STANDNUMMERS (uniek) en de kolom met standnummers.
 Resultaat: standnummers die wel in CAD staan maar niet in Bestellingen (CAD \\ Bestellingen),
 oplopend gesorteerd (natuurlijke sortering). Output = .xlsx
@@ -14,7 +14,6 @@ import re
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import Optional
-
 import pandas as pd
 
 # =========================
@@ -29,27 +28,24 @@ def is_stand_like(s: str) -> bool:
         return False
     return bool(STAND_LIKE_RE.match(str(s)))
 
-
 def natural_key(s: str):
     """
-    Sorteersleutel die gemengde cijfers/letters netjes sorteert.
+    Natuurlijke sortering met type-tags zodat er nooit str vs int vergeleken wordt.
     Voorbeelden: 0.A9 < 0.A10 < 1.A01 < 8.F49
     """
-    parts = re.findall(r"\d+|\D+", str(s))
+    parts = re.findall(r"\d+|\D+", "" if s is None else str(s))
     key = []
     for p in parts:
         if p.isdigit():
-            key.append(int(p))
+            key.append((0, int(p)))
         else:
-            key.append(p.upper())
+            key.append((1, p.upper()))
     return key
 
-
 def normalize_series(ser: pd.Series) -> pd.Series:
-    """Naar string, strip spaties, verwijder lege."""
+    """Naar string, strip spaties."""
     ser = ser.astype(str).fillna("").str.strip()
     return ser
-
 
 def _read_csv(path: Path):
     """CSV lezen met autodetect delimiter en encoding fallbacks."""
@@ -65,29 +61,23 @@ def _read_csv(path: Path):
             used = (";", "cp1252")
     return df, used
 
-
 def read_table(path: Path) -> pd.DataFrame:
     """
     Lees CSV/XLS(X) naar DataFrame (strings). Detecteert automatisch:
-    - CSV zonder header waarbij de 1e rij standnummers bevat:
+    - CSV/Excel zonder header waarbij de 1e rij standnummers bevat:
       dan herlaadt met header=None zodat kolomnamen niet fout zijn.
     """
     suffix = path.suffix.lower()
     if suffix in (".xlsx", ".xls"):
-        # Probeer header=0; als de kolomnamen op standnummers lijken -> herlaad zonder header
         df = pd.read_excel(path, dtype=str, header=0)
         if any(is_stand_like(c) for c in df.columns):
             df = pd.read_excel(path, dtype=str, header=None)
             df.columns = [f"Kolom_{i}" for i in range(df.shape[1])]
     elif suffix == ".csv":
         df, used = _read_csv(path)
-        # Header-detectie: als een of meer kolomnamen op standnummers lijken, dan is het
-        # waarschijnlijk geen echte header → herlaad zonder header.
         if any(is_stand_like(c) for c in df.columns):
-            # herlaad met dezelfde delimiter/encoding maar zonder header
             sep, enc = used
             if sep == "auto":
-                # autodetect opnieuw met header=None
                 try:
                     df = pd.read_csv(path, dtype=str, sep=None, engine="python",
                                      encoding=enc, header=None)
@@ -99,11 +89,9 @@ def read_table(path: Path) -> pd.DataFrame:
     else:
         raise ValueError(f"Niet-ondersteund bestandstype: {suffix} (gebruik .csv of .xlsx/.xls)")
 
-    # Als Pandas 0..N kolomnamen gaf, maak dan Kolom_0...
     if list(df.columns) == list(range(len(df.columns))):
         df.columns = [f"Kolom_{i}" for i in range(len(df.columns))]
     return df
-
 
 def ask_for_file(title: str) -> Optional[Path]:
     p = filedialog.askopenfilename(
@@ -111,7 +99,6 @@ def ask_for_file(title: str) -> Optional[Path]:
         filetypes=[("Excel/CSV", "*.xlsx *.xls *.csv"), ("Alle bestanden", "*.*")]
     )
     return Path(p) if p else None
-
 
 def ask_for_column(root: tk.Tk, df: pd.DataFrame, title: str) -> Optional[str]:
     """Eenvoudige listbox om 1 kolom te kiezen."""
@@ -157,7 +144,6 @@ def ask_for_column(root: tk.Tk, df: pd.DataFrame, title: str) -> Optional[str]:
     dialog.wait_window()
     return state["value"]
 
-
 def cad_minus_orders(orders_col: pd.Series, cad_col: pd.Series):
     """
     Retourneert lijst met standnummers die wél in CAD staan en NIET in Bestellingen.
@@ -175,7 +161,6 @@ def cad_minus_orders(orders_col: pd.Series, cad_col: pd.Series):
 
     result = sorted(list(set_cad - set_orders), key=natural_key)
     return result
-
 
 # =========================
 # Main (GUI flow)
@@ -250,7 +235,6 @@ def main():
         messagebox.showerror("Fout bij wegschrijven", f"{e}")
         return
 
-
 if __name__ == "__main__":
     try:
         main()
@@ -260,5 +244,6 @@ if __name__ == "__main__":
         except Exception:
             pass
         raise
+
 
 
